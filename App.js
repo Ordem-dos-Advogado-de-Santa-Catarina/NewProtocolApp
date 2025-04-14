@@ -1,11 +1,9 @@
-// Arquivo modificado: App.js
-
 import React, { useEffect, useState, useRef } from 'react';
-import { StyleSheet, SafeAreaView, BackHandler, Platform, StatusBar, LogBox } from 'react-native';
+import { StyleSheet, SafeAreaView, BackHandler, Platform, StatusBar, LogBox, Text, TouchableOpacity, View } from 'react-native'; // Import Text, TouchableOpacity, View
 import { WebView } from 'react-native-webview';
 
 // Conteúdo HTML da página de manutenção (inline para simplificar, baseado nos arquivos fornecidos)
-const maintenanceHTML = `
+const createMaintenanceHTML = (debugMessage) => `
 <!DOCTYPE html>
 <html lang="pt-br">
 <head>
@@ -45,8 +43,19 @@ const maintenanceHTML = `
             color: white;
             text-decoration: none;
             border-radius: 5px;
-            margin-top: 20px;
+            margin-top: 10px; /* Reduced margin for buttons */
             cursor: pointer; /* Indica que é clicável */
+            margin-bottom: 10px; /* Added margin between buttons */
+        }
+        .debug-info {
+            margin-top: 20px;
+            padding: 10px;
+            background-color: #eee;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            text-align: left;
+            font-size: 0.8em;
+            color: #555;
         }
     </style>
 </head>
@@ -55,14 +64,22 @@ const maintenanceHTML = `
         <h1>🛠️ Aplicativo em Manutenção</h1>
         <p>Desculpe, o aplicativo está temporariamente em manutenção para melhorias.</p>
         <p>Por favor, tente novamente mais tarde.</p>
-        <div class="button" id="reloadButton">Tentar Novamente</div> 
-        </div>
+        <div class="button" id="reloadButton">Tentar Novamente</div>
+        ${debugMessage ? `<div class="debug-info"><strong>Debug Info:</strong><br/>${debugMessage}</div>` : ''}
+    </div>
     <script>
         document.getElementById('reloadButton').addEventListener('click', function() {
             if (window.ReactNativeWebView) {
                 window.ReactNativeWebView.postMessage('reload');
             } else {
                 alert('Recarregar não disponível em modo de desenvolvimento web.'); // Mensagem para debug web
+            }
+        });
+        document.getElementById('viewPageButton').addEventListener('click', function() { // New button action
+            if (window.ReactNativeWebView) {
+                window.ReactNativeWebView.postMessage('viewPage'); // New message to handle "view page anyway"
+            } else {
+                alert('Ver página não disponível em modo de desenvolvimento web.');
             }
         });
     </script>
@@ -76,6 +93,7 @@ export default function App() {
     const webViewRef = useRef(null);
     const [canGoBack, setCanGoBack] = useState(false);
     const [isMaintenance, setIsMaintenance] = useState(false);
+    const [debugMessage, setDebugMessage] = useState(null); // State for debug message
 
     useEffect(() => {
         setKey(prevKey => prevKey + 1);
@@ -106,16 +124,30 @@ export default function App() {
     const handleError = (event) => {
         const { nativeEvent } = event;
         if (nativeEvent.httpStatusCode !== 404) {
+            const errorInfo = `
+                URL: ${nativeEvent.url || 'N/A'}<br/>
+                Error Domain: ${nativeEvent.domain || 'N/A'}<br/>
+                Error Code: ${nativeEvent.code || 'N/A'}<br/>
+                Description: ${nativeEvent.description || 'N/A'}<br/>
+                HTTP Status Code: ${nativeEvent.httpStatusCode || 'N/A'}
+            `;
+            setDebugMessage(errorInfo); // Set debug message state
             setIsMaintenance(true);
         } else {
             setIsMaintenance(false);
+            setDebugMessage(null); // Clear debug message if 404
         }
     };
 
     const handleWebViewMessage = (event) => {
         if (event.nativeEvent.data === 'reload') {
-            setIsMaintenance(false); // Sai do modo de manutenção
-            setKey(prevKey => prevKey + 1); // Força o WebView a recarregar a URL original
+            setIsMaintenance(false);
+            setDebugMessage(null); // Clear debug message on reload attempt
+            setKey(prevKey => prevKey + 1);
+        } else if (event.nativeEvent.data === 'viewPage') { // Handle "viewPage" message
+            setIsMaintenance(false); // Just exit maintenance mode, try to load original URL
+            setDebugMessage(null); // Clear debug message when viewing page
+            setKey(prevKey => prevKey + 1); // Force reload of original URL
         }
     };
 
@@ -127,18 +159,23 @@ export default function App() {
 
     return (
         <>
-            <StatusBar backgroundColor="rgb(57, 73, 171)" barStyle="light-content" />
+            <StatusBar backgroundColor={isMaintenance ? "#CC0000" : "rgb(57, 73, 171)"} barStyle="light-content" /> {/* Conditional StatusBar color */}
             <SafeAreaView style={styles.container}>
+                {isMaintenance && debugMessage ? (
+                    <View style={styles.debugOverlay}>
+                         {/* You can render debug message in React Native view if needed, but HTML display is richer */}
+                    </View>
+                ) : null}
                 <WebView
                     key={key}
                     ref={webViewRef}
-                    source={isMaintenance ? { html: maintenanceHTML } : { uri: 'https://intranet.oab-sc.org.br/arearestrita/NewProtocol/' }}
+                    source={isMaintenance ? { html: createMaintenanceHTML(debugMessage) } : { uri: 'https://intranet.oab-sc.org.br/arearestrita/NewProtocol' }}
                     cacheEnabled={false}
                     incognito={true}
                     style={styles.webview}
                     onNavigationStateChange={handleNavigationStateChange}
                     onError={handleError}
-                    onMessage={handleWebViewMessage} // Handler para mensagens do WebView
+                    onMessage={handleWebViewMessage}
                 />
             </SafeAreaView>
         </>
@@ -151,5 +188,15 @@ const styles = StyleSheet.create({
     },
     webview: {
         flex: 1,
+    },
+    debugOverlay: { // Example style for a React Native debug overlay (if you want to use it)
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        padding: 10,
+        backgroundColor: 'rgba(255, 255, 255, 0.8)',
+        borderTopWidth: 1,
+        borderColor: '#ccc',
     },
 });

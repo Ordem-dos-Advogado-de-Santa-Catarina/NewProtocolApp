@@ -2,7 +2,7 @@
   "expo": {
     "name": "NewProtocolApp",
     "slug": "NewProtocolApp",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -19,10 +19,16 @@
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
-      }
+      },
+      "package": "com.oabsc.newprotocolapp"
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "f188509c-1c33-48e4-a18d-c71fbc31d453"
+      }
     }
   }
 }
