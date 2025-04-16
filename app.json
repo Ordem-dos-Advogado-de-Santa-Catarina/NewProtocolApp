@@ -1,8 +1,10 @@
+// Arquivo: app.json
+
 {
   "expo": {
     "name": "NewProtocolApp",
     "slug": "NewProtocolApp",
-    "version": "1.0.4",
+    "version": "1.0.6", 
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -29,6 +31,9 @@
       "eas": {
         "projectId": "f188509c-1c33-48e4-a18d-c71fbc31d453"
       }
-    }
+    },
+    "plugins": [
+      "./config-plugins/withNetworkSecurityConfig.js"
+    ]
   }
 }

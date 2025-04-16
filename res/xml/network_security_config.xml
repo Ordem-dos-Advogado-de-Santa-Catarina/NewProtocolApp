@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- Configuração padrão: Mantém o bloqueio de cleartext e confia nos CAs do sistema -->
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+
+    <!-- Configuração específica para o domínio da OAB-SC -->
+    <domain-config cleartextTrafficPermitted="true">
+        <!-- Permite tráfego cleartext (HTTP ou conteúdo misto HTTPS/HTTP) -->
+        <!-- para intranet.oab-sc.org.br e seus subdomínios -->
+        <domain includeSubdomains="true">intranet.oab-sc.org.br</domain>
+    </domain-config>
+
+    <!-- Você pode adicionar outras regras <domain-config> aqui se necessário -->
+
+</network-security-config>
