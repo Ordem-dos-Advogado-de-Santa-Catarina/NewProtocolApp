@@ -1,20 +1,11 @@
 // Arquivo: App.js
 
 import React, { useEffect, useState, useRef } from 'react';
-import {
-    StyleSheet,
-    SafeAreaView,
-    BackHandler,
-    Platform, // <<< GARANTIDO QUE ESTÁ IMPORTADO
-    StatusBar,
-    LogBox,
-    Text, // <<< Text não está sendo usado diretamente, mas mantido caso necessário
-    View, // <<< View não está sendo usado diretamente, mas mantido caso necessário
-    ActivityIndicator
-} from 'react-native';
+import { StyleSheet, SafeAreaView, BackHandler, Platform, StatusBar, LogBox, Text, View, ActivityIndicator } from 'react-native';
 import { WebView } from 'react-native-webview';
 
-// Conteúdo HTML da página de manutenção (igual ao seu)
+
+// Conteúdo HTML da página de manutenção (feita com a ia do google baseada na pagina verdadeira)
 const createMaintenanceHTML = (debugMessage) => `
 <!DOCTYPE html>
 <html lang="pt-br">
@@ -52,209 +43,173 @@ const createMaintenanceHTML = (debugMessage) => `
 </html>
 `;
 
-// Script de limpeza (igual ao seu)
-const clearWebViewDataScript = `(function() { try { localStorage.clear(); sessionStorage.clear(); var cookies = document.cookie.split(";"); for (var i = 0; i < cookies.length; i++) { var cookie = cookies[i]; var eqPos = cookie.indexOf("="); var name = eqPos > -1 ? cookie.substr(0, eqPos) : cookie; document.cookie = name.trim() + "=;expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/"; } window.ReactNativeWebView?.postMessage('cleared'); return true; } catch (e) { window.ReactNativeWebView?.postMessage('clear_error: ' + e.message); return false; } })();`;
-
-
 export default function App() {
-  const [key, setKey] = useState(Date.now());
-  const webViewRef = useRef(null);
-  const [canGoBack, setCanGoBack] = useState(false);
-  const [isMaintenance, setIsMaintenance] = useState(false);
-  const [debugMessage, setDebugMessage] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [currentUrl, setCurrentUrl] = useState('https://intranet.oab-sc.org.br/arearestrita/NewProtocol');
+    const [key, setKey] = useState(Date.now());
+    const webViewRef = useRef(null);
+    const [canGoBack, setCanGoBack] = useState(false);
+    const [isMaintenance, setIsMaintenance] = useState(false);
+    const [debugMessage, setDebugMessage] = useState(null);
+    const [isLoading, setIsLoading] = useState(true);
+    const [currentUrl, setCurrentUrl] = useState('https://intranet.oab-sc.org.br/arearestrita/NewProtocol');
 
-  // Função de limpeza (igual à sua)
-  const clearData = () => {
-    if (webViewRef.current) {
-      console.log("Injetando script de limpeza de dados...");
-      webViewRef.current.injectJavaScript(clearWebViewDataScript);
-    }
-  };
+    // Script de limpeza (try-catch pego do stackoverflow e integrado com goroba do gpt)
+    const clearWebViewDataScript = `(function() { try { localStorage.clear(); sessionStorage.clear(); var cookies = document.cookie.split(";"); for (var i = 0; i < cookies.length; i++) { var cookie = cookies[i]; var eqPos = cookie.indexOf("="); var name = eqPos > -1 ? cookie.substr(0, eqPos) : cookie; document.cookie = name.trim() + "=;expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/"; } window.ReactNativeWebView?.postMessage('cleared'); return true; } catch (e) { window.ReactNativeWebView?.postMessage('clear_error: ' + e.message); return false; } })();`;
 
-  // Botão Voltar (igual ao seu)
-  useEffect(() => {
-    const backAction = () => {
-      if (canGoBack && webViewRef.current && !isMaintenance) {
-        webViewRef.current.goBack();
-        return true;
-      }
-      return false;
+    // Função de limpeza
+    const clearData = () => {
+        if (webViewRef.current) {
+            console.log("Injetando script de limpeza de dados...");
+            webViewRef.current.injectJavaScript(clearWebViewDataScript);
+        }
     };
-    const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
-    return () => backHandler.remove();
-  }, [canGoBack, isMaintenance]);
 
-  // Estado de Navegação (igual ao seu)
-  const handleNavigationStateChange = (navState) => {
-    setCanGoBack(navState.canGoBack);
-    console.log('Navigation State:', navState.url); // Log URL changes (mantido)
-  };
+    // Botão Voltar
+    useEffect(() => {
+        const backAction = () => {
+            if (canGoBack && webViewRef.current && !isMaintenance) {
+                webViewRef.current.goBack();
+                return true;
+            }
+            return false;
+        };
+        const backHandler = BackHandler.addEventListener('hardwareBackPress', backAction);
+        return () => backHandler.remove();
+    }, [canGoBack, isMaintenance]);
 
-  // Tratamento de Erro Genérico (onError)
-  const handleError = (syntheticEvent) => {
-    const { nativeEvent } = syntheticEvent;
-    // Log detalhado do erro (mantido)
-    console.warn('WebView Error Details (onError):', JSON.stringify(nativeEvent, null, 2));
-    setIsLoading(false);
+    // Estado de Navegação
+    const handleNavigationStateChange = (navState) => {
+        setCanGoBack(navState.canGoBack);
+    };
 
-    // <<< REMOVIDO o if que tentava ignorar SSL aqui >>>
-    // A lógica de ignorar SSL será tratada por onReceivedSslError
+    // Tratamento de Erro
+    const handleError = (syntheticEvent) => {
+        const { nativeEvent } = syntheticEvent;
+        console.warn('WebView Error: ', nativeEvent);
+        setIsLoading(false);
 
-    // Verifica se o erro é SSL e se estamos no Android. Se sim, provavelmente já foi tratado
-    // por onReceivedSslError, então evitamos mostrar a manutenção desnecessariamente.
-    const isSslError = nativeEvent.description?.includes('SSL error') || nativeEvent.description?.includes('net::ERR_CERT');
-    if (isSslError && Platform.OS === 'android') {
-         console.log("onError: Erro SSL detectado no Android, provavelmente tratado por onReceivedSslError. Ignorando para manutenção.");
-         return; // Não mostra a tela de manutenção para este caso específico
-    }
+        const failedUrl = nativeEvent.url || currentUrl;
+        const isSslError = nativeEvent.code === 3 || nativeEvent.description?.includes('SSL error') || nativeEvent.description?.includes('net::ERR_CERT');
+        const isConnectionError = nativeEvent.code === -6 || nativeEvent.code === -2 || nativeEvent.description?.includes('Could not connect');
+        const shouldShowMaintenance = nativeEvent.httpStatusCode !== 404 && (isSslError || isConnectionError || !nativeEvent.description?.includes('net::ERR_ABORTED'));
 
-    // Lógica para mostrar manutenção para outros erros (igual à sua, ajustada sem a checagem SSL explícita aqui)
-    const failedUrl = nativeEvent.url || currentUrl;
-    const isConnectionError = nativeEvent.code === -6 || nativeEvent.code === -2 || nativeEvent.description?.includes('Could not connect');
-    // A condição shouldShowMaintenance agora foca em erros de conexão ou outros não abortados/SSL já tratados
-    const shouldShowMaintenance = nativeEvent.httpStatusCode !== 404 && (isConnectionError || !nativeEvent.description?.includes('net::ERR_ABORTED'));
+        if (shouldShowMaintenance) {
+            const errorInfo = `
+                URL: ${failedUrl}<br/>
+                Code: ${nativeEvent.code || 'N/A'}<br/>
+                Description: ${nativeEvent.description || 'N/A'}<br/>
+                Domain: ${nativeEvent.domain || 'N/A'}<br/>
+                HTTP Status: ${nativeEvent.httpStatusCode || 'N/A'}<br/>
+                SSL Related: ${isSslError ? 'Yes' : 'No'}
+            `;
+            setDebugMessage(errorInfo);
+            setIsMaintenance(true);
+        }
+    };
 
-    if (shouldShowMaintenance) {
-      const errorInfo = `
-        URL: ${failedUrl}<br/>
-        Code: ${nativeEvent.code || 'N/A'}<br/>
-        Description: ${nativeEvent.description || 'N/A'}<br/>
-        Domain: ${nativeEvent.domain || 'N/A'}<br/>
-        HTTP Status: ${nativeEvent.httpStatusCode || 'N/A'}<br/>
-        SSL Related: ${isSslError ? 'Yes' : 'No'}
-      `;
-      setDebugMessage(errorInfo);
-      setIsMaintenance(true);
-    }
-  };
+    // Tratamento de Mensagens (Magica)
+    const handleWebViewMessage = (event) => {
+        const message = event.nativeEvent.data;
+        console.log("Mensagem recebida do WebView:", message);
+        if (message === 'reload') {
+            setIsMaintenance(false); // f5 do modo manutenção
+            setDebugMessage(null);    // Limpa mensagem de erro
+            // Desativado: clearData();
+            setIsLoading(true);       // Mostra loading para a nova tentativa
+            setKey(prevKey => prevKey + 1); // Força recarga completa do WebView
+        } else if (message === 'cleared') {
+            console.log("Confirmação: Dados do WebView limpos via JS.");
+        } else if (message.startsWith('clear_error:')) {
+            // Loga o erro que veio do catch do script injetado
+            console.error("Erro reportado pelo script de limpeza:", message);
+        }
+    };
 
-  // --- ADICIONADO HANDLER PARA ERROS SSL (ANDROID) ---
-  const handleSslError = (event) => {
-      if (Platform.OS === 'android') {
-          console.warn('SSL Error Received (onReceivedSslError):', event.nativeEvent.url, event.nativeEvent.error);
-          // !!! ATENÇÃO: ISSO IGNORA O ERRO SSL E CONTINUA !!!
-          // !!! USE COM EXTREMO CUIDADO E APENAS SE CONFIA NO DOMÍNIO !!!
-          // !!! A SOLUÇÃO CORRETA É ARRUMAR O CERTIFICADO NO SERVIDOR !!!
-          try {
-               // A API pode variar um pouco entre versões, mas geralmente é `event.proceed()`
-               if (typeof event.proceed === 'function') {
-                  console.log("Chamando event.proceed()");
-                  event.proceed();
-               } else {
-                  console.error("onReceivedSslError: event.proceed is not a function. Não foi possível ignorar o erro SSL.");
-                  // Se proceed não existir, não podemos fazer nada, o erro ocorrerá.
-               }
+    // Limpeza de Logs
+    useEffect(() => {
+        LogBox.ignoreLogs(['Require cycle:']);
+    }, []);
 
-          } catch (e) {
-              console.error("Erro ao tentar chamar event.proceed() em onReceivedSslError:", e);
-          }
-          return true; // Indica que o evento foi tratado
-      }
-      // Em outras plataformas ou se não puder tratar, retorna false (ou nada)
-      return false;
-  };
-  // --- FIM DO HANDLER SSL ---
+    // Início do Carregamento
+    const handleLoadStart = (syntheticEvent) => {
+        if (!isMaintenance) {
+           console.log("WebView Load Start:", syntheticEvent.nativeEvent.url);
+           setIsLoading(true);
+        }
+    };
 
-  // Tratamento de Mensagens (igual ao seu)
-  const handleWebViewMessage = (event) => {
-    const message = event.nativeEvent.data;
-    console.log("Mensagem recebida do WebView:", message);
-    if (message === 'reload') {
-      setIsMaintenance(false);
-      setDebugMessage(null);
-      setIsLoading(true);
-      setKey(prevKey => prevKey + 1);
-    } else if (message === 'cleared') {
-      console.log("Confirmação: Dados do WebView limpos via JS.");
-    } else if (message.startsWith('clear_error:')) {
-      console.error("Erro reportado pelo script de limpeza:", message);
-    }
-  };
+    // Fim do Carregamento?!
+    const handleLoadEnd = (syntheticEvent) => {
+        const { nativeEvent } = syntheticEvent;
+        console.log("WebView Load End:", nativeEvent.url, "Success:", !nativeEvent.loading && !nativeEvent.error);
+        setIsLoading(false); // Esconde o loading independentemente do sucesso aqui
 
-  // Limpeza de Logs (igual ao seu)
-  useEffect(() => {
-    LogBox.ignoreLogs(['Require cycle:']);
-    // LogBox.ignoreLogs(['WebView: `onReceivedSslError` is not supported on iOS.']); // Descomente se o aviso incomodar
-  }, []);
+        // Limpa os dados SOMENTE SE:
+        // 1. NÃO estivermos em modo de manutenção
+        // 2. O carregamento NÃO terminou com erro
+        // 3. O WebView existe
+        // 4. A URL carregada é a URL principal que queremos limpar
+        if (!isMaintenance && !nativeEvent.error && webViewRef.current && nativeEvent.url === currentUrl) {
+            console.log(`Carregamento de ${currentUrl} concluído com sucesso. Tentando limpar dados...`);
+            clearData(); // <<< Chama a limpeza aqui
+        } else if (!isMaintenance && nativeEvent.error) {
+            // Se não estiver em manutenção, mas onLoadEnd reportar um erro que onError não pegou
+            console.warn("onLoadEnd reportou erro, verificando se manutenção é necessária:", nativeEvent.description);
+            // Poderia rechamar handleError
+            // feita com a porra do gpt
+        }
+    };
 
-  // Início do Carregamento (igual ao seu)
-  const handleLoadStart = (syntheticEvent) => {
-    if (!isMaintenance) {
-      console.log("WebView Load Start:", syntheticEvent.nativeEvent.url);
-      setIsLoading(true);
-    }
-  };
+    // Define a source
+    const webViewSource = isMaintenance
+        ? { html: createMaintenanceHTML(debugMessage) }
+        : { uri: currentUrl };
 
-  // Fim do Carregamento (igual ao seu, com lógica de limpeza)
-  const handleLoadEnd = (syntheticEvent) => {
-    const { nativeEvent } = syntheticEvent;
-    console.log("WebView Load End:", nativeEvent.url, "Success:", !nativeEvent.loading && !nativeEvent.error);
-    // Esconde o loading independentemente do sucesso aqui, pois onError/onReceivedSslError tratarão falhas
-    setIsLoading(false);
+    return (
+        <>
+            <StatusBar backgroundColor={isMaintenance ? "#CC0000" : "rgb(57, 73, 171)"} barStyle="light-content" />
+            <SafeAreaView style={styles.container}>
+                <WebView
+                    key={key}
+                    ref={webViewRef}
+                    source={webViewSource}
+                    style={styles.webview}
+                    // --- Props Essenciais ---
+                    cacheEnabled={false}
+                    incognito={Platform.OS === 'android' ? true : false} // incognito é mais relevante/suportado no Android para tentar limpar estado
+                    javaScriptEnabled={true}
+                    domStorageEnabled={true} // Crucial para localStorage funcionar
+                    originWhitelist={['*']} // Permite postMessage de/para qualquer origem
+                    // --- Handlers de Eventos ---
+                    onNavigationStateChange={handleNavigationStateChange}
+                    onError={handleError}
+                    onHttpError={handleError} // Redundante mas seguro
+                    onMessage={handleWebViewMessage}
+                    onLoadStart={handleLoadStart}
+                    onLoadEnd={handleLoadEnd} // <<< Lógica de limpeza movida para cá
+                    // --- Outras Props ---
+                    startInLoadingState={false} // Usamos nosso ActivityIndicator
+                    androidHardwareAccelerationDisabled={false}
+                    allowsInlineMediaPlayback={true}
+                    // --- Debug (remova se não precisar mais) ---
+                    onLoadProgress={({ nativeEvent }) => {
+                         console.log("Load progress:", nativeEvent.progress);
+                    }}
+                />
 
-    if (!isMaintenance && !nativeEvent.error && webViewRef.current && nativeEvent.url === currentUrl) {
-      console.log(`Carregamento de ${currentUrl} concluído com sucesso. Tentando limpar dados...`);
-      clearData();
-    } else if (!isMaintenance && nativeEvent.error) {
-      // Apenas loga, confia nos handlers de erro específicos
-      console.warn("onLoadEnd reportou erro:", nativeEvent.description);
-    }
-  };
-
-  // Define a source (igual ao seu)
-  const webViewSource = isMaintenance
-    ? { html: createMaintenanceHTML(debugMessage) }
-    : { uri: currentUrl };
-
-  return (
-    <>
-      <StatusBar backgroundColor={isMaintenance ? "#CC0000" : "rgb(57, 73, 171)"} barStyle="light-content" />
-      <SafeAreaView style={styles.container}>
-        <WebView
-          key={key}
-          ref={webViewRef}
-          source={webViewSource}
-          style={styles.webview} // Estilo mantido
-          // --- Props Essenciais (mantidas do seu código) ---
-          cacheEnabled={false}
-          incognito={Platform.OS === 'android' ? true : false}
-          javaScriptEnabled={true}
-          domStorageEnabled={true}
-          originWhitelist={['*']}
-          // --- Handlers de Eventos (com adição do onReceivedSslError) ---
-          onNavigationStateChange={handleNavigationStateChange}
-          onError={handleError}
-          onHttpError={handleError} // Mantido por segurança
-          onReceivedSslError={handleSslError} // <<< ADICIONADO PARA IGNORAR ERROS SSL NO ANDROID
-          onMessage={handleWebViewMessage}
-          onLoadStart={handleLoadStart}
-          onLoadEnd={handleLoadEnd}
-          // --- Outras Props (mantidas do seu código) ---
-          startInLoadingState={false}
-          androidHardwareAccelerationDisabled={false}
-          allowsInlineMediaPlayback={true}
-          mixedContentMode="always" // Mantido do seu código
-          // --- Debug (mantido do seu código) ---
-          onLoadProgress={({ nativeEvent }) => {
-            console.log("Load progress:", nativeEvent.progress);
-          }}
-        />
-        {/* Indicador de Loading (igual ao seu) */}
-        {isLoading && !isMaintenance && (
-          <ActivityIndicator
-            style={styles.loadingIndicator} // Estilo mantido
-            size="large"
-            color="#0267a6"
-          />
-        )}
-      </SafeAreaView>
-    </>
-  );
+                {/* Indicador de Loading (igual) */}
+                {isLoading && !isMaintenance && (
+                    <ActivityIndicator
+                        style={styles.loadingIndicator}
+                        size="large"
+                        color="#0267a6"
+                    />
+                )}
+            </SafeAreaView>
+        </>
+    );
 }
 
-// Estilos (iguais aos seus, não modificados)
+// Estilos
 const styles = StyleSheet.create({
     container: {
         flex: 1,
