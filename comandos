@@ -1,0 +1,6 @@
+eas build --platform android --profile preview
+
+npm run web
+
+
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass

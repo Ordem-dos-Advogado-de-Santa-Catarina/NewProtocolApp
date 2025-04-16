@@ -5,7 +5,7 @@ import { StyleSheet, SafeAreaView, BackHandler, Platform, StatusBar, LogBox, Tex
 import { WebView } from 'react-native-webview';
 
 // --- ATENÇÃO: Network Security Config ainda é necessária para erro SSL ---
-// (Comentário sobre Network Security Config mantido)
+// (Comentário sobre Network Security Config mantido, embora onReceivedSslError seja a solução aqui)
 
 // Conteúdo HTML da página de manutenção (igual ao anterior)
 const createMaintenanceHTML = (debugMessage) => `
@@ -54,7 +54,7 @@ export default function App() {
     const [isLoading, setIsLoading] = useState(true);
     const [currentUrl, setCurrentUrl] = useState('https://intranet.oab-sc.org.br/arearestrita/NewProtocol');
 
-    // Script de limpeza (igual, com try-catch)
+    // Script de limpeza (igual)
     const clearWebViewDataScript = `(function() { try { localStorage.clear(); sessionStorage.clear(); var cookies = document.cookie.split(";"); for (var i = 0; i < cookies.length; i++) { var cookie = cookies[i]; var eqPos = cookie.indexOf("="); var name = eqPos > -1 ? cookie.substr(0, eqPos) : cookie; document.cookie = name.trim() + "=;expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/"; } window.ReactNativeWebView?.postMessage('cleared'); return true; } catch (e) { window.ReactNativeWebView?.postMessage('clear_error: ' + e.message); return false; } })();`;
 
     // Função de limpeza (igual)
@@ -83,16 +83,25 @@ export default function App() {
         setCanGoBack(navState.canGoBack);
     };
 
-    // Tratamento de Erro (igual)
+    // Tratamento de Erro (igual - ainda útil para outros erros)
     const handleError = (syntheticEvent) => {
         const { nativeEvent } = syntheticEvent;
         console.warn('WebView Error: ', nativeEvent);
-        setIsLoading(false);
+        setIsLoading(false); // Garante que o loading pare em caso de erro
 
+        // Não entra em manutenção automaticamente por erros SSL aqui,
+        // pois onReceivedSslError tentará prosseguir.
+        // Mantém a lógica para outros erros (conexão, HTTP, etc.)
         const failedUrl = nativeEvent.url || currentUrl;
         const isSslError = nativeEvent.code === 3 || nativeEvent.description?.includes('SSL error') || nativeEvent.description?.includes('net::ERR_CERT');
         const isConnectionError = nativeEvent.code === -6 || nativeEvent.code === -2 || nativeEvent.description?.includes('Could not connect');
-        const shouldShowMaintenance = nativeEvent.httpStatusCode !== 404 && (isSslError || isConnectionError || !nativeEvent.description?.includes('net::ERR_ABORTED'));
+        const isHttpError = nativeEvent.httpStatusCode && nativeEvent.httpStatusCode >= 400; // Erros HTTP como 404, 500
+
+        // Entra em manutenção se NÃO for um erro SSL (tratado em onReceivedSslError)
+        // E for um erro de conexão, HTTP ou outro erro relevante que não seja 'abortado'
+        const shouldShowMaintenance = !isSslError &&
+                                      (isConnectionError || isHttpError || (nativeEvent.code && !nativeEvent.description?.includes('net::ERR_ABORTED')));
+
 
         if (shouldShowMaintenance) {
             const errorInfo = `
@@ -108,20 +117,18 @@ export default function App() {
         }
     };
 
-    // Tratamento de Mensagens (MODIFICADO)
+    // Tratamento de Mensagens (igual)
     const handleWebViewMessage = (event) => {
         const message = event.nativeEvent.data;
         console.log("Mensagem recebida do WebView:", message);
         if (message === 'reload') {
-            setIsMaintenance(false); // Sai do modo manutenção
-            setDebugMessage(null);    // Limpa mensagem de erro
-            // REMOVIDO: clearData(); // NÃO limpa dados aqui, pois o contexto é errado
-            setIsLoading(true);       // Mostra loading para a nova tentativa
-            setKey(prevKey => prevKey + 1); // Força recarga completa do WebView
+            setIsMaintenance(false);
+            setDebugMessage(null);
+            setIsLoading(true);
+            setKey(prevKey => prevKey + 1);
         } else if (message === 'cleared') {
             console.log("Confirmação: Dados do WebView limpos via JS.");
         } else if (message.startsWith('clear_error:')) {
-            // Loga o erro que veio do catch do script injetado
             console.error("Erro reportado pelo script de limpeza:", message);
         }
     };
@@ -139,27 +146,46 @@ export default function App() {
         }
     };
 
-    // Fim do Carregamento (MODIFICADO - Lógica de Limpeza)
+    // Fim do Carregamento (igual)
     const handleLoadEnd = (syntheticEvent) => {
         const { nativeEvent } = syntheticEvent;
         console.log("WebView Load End:", nativeEvent.url, "Success:", !nativeEvent.loading && !nativeEvent.error);
-        setIsLoading(false); // Esconde o loading independentemente do sucesso aqui
+        setIsLoading(false);
 
-        // Limpa os dados SOMENTE SE:
-        // 1. NÃO estivermos em modo de manutenção
-        // 2. O carregamento NÃO terminou com erro
-        // 3. O WebView existe
-        // 4. A URL carregada é a URL principal que queremos limpar
         if (!isMaintenance && !nativeEvent.error && webViewRef.current && nativeEvent.url === currentUrl) {
             console.log(`Carregamento de ${currentUrl} concluído com sucesso. Tentando limpar dados...`);
-            clearData(); // <<< Chama a limpeza aqui, no contexto correto
+            clearData();
         } else if (!isMaintenance && nativeEvent.error) {
-            // Se não estiver em manutenção, mas onLoadEnd reportar um erro que onError não pegou
-            console.warn("onLoadEnd reportou erro, verificando se manutenção é necessária:", nativeEvent.description);
-            // Poderia re-chamar handleError ou parte de sua lógica aqui se necessário,
-            // mas geralmente onError/onHttpError são mais confiáveis para isso.
+            console.warn("onLoadEnd reportou erro:", nativeEvent.description);
+            // A lógica de manutenção já deve ter sido tratada por onError/onHttpError/onReceivedSslError
         }
     };
+
+    // *** NOVO: Handler para Erros SSL (Android) ***
+    const handleSslError = (event) => {
+        // Esta função só é chamada no Android
+        console.warn('SSL Error Detected:', event.nativeEvent);
+
+        // --- AVISO DE SEGURANÇA ---
+        // Chamar proceed() aqui ignora o erro SSL (certificado inválido, hostname mismatch, etc.)
+        // Isso permite a conexão, mas remove uma camada importante de segurança.
+        // Use apenas se você entender os riscos e confiar no destino.
+        // Idealmente, o servidor deveria ter um certificado SSL corretamente configurado.
+        // --------------------------
+
+        // Verifica se o handler existe (garantia extra, deve existir no Android)
+        if (event.nativeEvent.handler) {
+             console.log('Ignorando erro SSL e tentando prosseguir...');
+             event.nativeEvent.handler.proceed(); // Diz ao WebView para continuar apesar do erro SSL
+        } else {
+             console.error('Erro SSL detectado, mas o handler não está disponível (isso não deveria acontecer no Android).');
+             // Se o handler não existir por algum motivo, o comportamento padrão (cancelar) ocorrerá.
+             // Poderíamos forçar a manutenção aqui se quiséssemos, mas vamos manter simples por enquanto.
+             // setIsMaintenance(true);
+             // setDebugMessage('SSL Error Handler Missing');
+        }
+    };
+
 
     // Define a source (igual)
     const webViewSource = isMaintenance
@@ -177,24 +203,25 @@ export default function App() {
                     style={styles.webview}
                     // --- Props Essenciais ---
                     cacheEnabled={false}
-                    incognito={Platform.OS === 'android' ? true : false} // incognito é mais relevante/suportado no Android para tentar limpar estado
+                    incognito={Platform.OS === 'android' ? true : false}
                     javaScriptEnabled={true}
-                    domStorageEnabled={true} // Crucial para localStorage funcionar
-                    originWhitelist={['*']} // Permite postMessage de/para qualquer origem
+                    domStorageEnabled={true}
+                    originWhitelist={['*']}
                     // --- Handlers de Eventos ---
                     onNavigationStateChange={handleNavigationStateChange}
-                    onError={handleError}
-                    onHttpError={handleError} // Redundante mas seguro
+                    onError={handleError} // Mantém para outros erros
+                    onHttpError={handleError} // Mantém para erros HTTP
                     onMessage={handleWebViewMessage}
                     onLoadStart={handleLoadStart}
-                    onLoadEnd={handleLoadEnd} // <<< Lógica de limpeza movida para cá
+                    onLoadEnd={handleLoadEnd}
+                    // *** NOVO: Handler específico para erros SSL no Android ***
+                    onReceivedSslError={handleSslError}
                     // --- Outras Props ---
-                    startInLoadingState={false} // Usamos nosso ActivityIndicator
+                    startInLoadingState={false}
                     androidHardwareAccelerationDisabled={false}
                     allowsInlineMediaPlayback={true}
-                    // --- Debug (remova se não precisar mais) ---
                     onLoadProgress={({ nativeEvent }) => {
-                         console.log("Load progress:", nativeEvent.progress);
+                         // console.log("Load progress:", nativeEvent.progress); // Descomente se precisar de log detalhado
                     }}
                 />
 
